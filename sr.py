@@ -4,12 +4,14 @@ import requests
 import datetime
 import re
 import sqlite3
+import sys
 
-def main():
+def main(update=False):
     db = sqlite3.connect("episodes.db")
     cursor = db.cursor()
 
-    if update_db(cursor):
+    if update and update_db(cursor):
+        print("committing changes to db")
         db.commit()
     
     search_episode(cursor)
@@ -19,13 +21,11 @@ def main():
 
 def update_db(cursor):
     latest_episode = check_latest_episode_in_db(cursor)
-    url = "http://api.sr.se/api/v2/episodes/index?programid=2024&fromdate=2009-01-01&todate=2009-02-10&page=1&size=25&format=json"
-    #url = "http://api.sr.se/api/v2/episodes/index?programid=2024&fromdate=" + str(latest_episode) + "&page=1&size=25&format=json"
+    url = "http://api.sr.se/api/v2/episodes/index?programid=2024&fromdate=" + str(latest_episode) + "&page=1&size=25&format=json"
 
     number_of_episodes = 0
 
     while True:
-        break
         response = requests.get(url)
         json_response = response.json()
         insert_episodes_into_db(cursor, json_response["episodes"])
@@ -41,12 +41,12 @@ def update_db(cursor):
     return False
 
 
-
 def check_latest_episode_in_db(cursor):
     cursor.execute("SELECT published FROM episodes ORDER BY published DESC")
     try:
         latest_episode = convert_utc_to_date(cursor.fetchone()[0])
         print(f"Senast inlagda avsnittet är {latest_episode}")
+        latest_episode += datetime.timedelta(days=1)
     except TypeError as identifier:
         latest_episode = "2009-01-01"
         print(f"Inget avsnitt inlagt, använder 2009-01-04 för att fylla databasen")
@@ -54,17 +54,28 @@ def check_latest_episode_in_db(cursor):
 
 
 def search_episode(cursor):
-    search_term = input("Ange sökterm: ")
+    search_term = ""
+    while len(search_term) < 3:
+        search_term = input("Ange sökterm (min 3 bokstäver): ")
+        if len(search_term) == 0:
+            return
+        
     print()
     terms = search_term.split()
+
     sql_string = f"SELECT * FROM episodes WHERE description LIKE '%{terms[0]}%'"
     for i in range(1, len(terms)):
         sql_string += f" AND description LIKE '%{terms[i]}%'"
+    
     cursor.execute(sql_string)
+    number_of_results = 0
+
     for row in cursor:
         print_episode(row)
+        number_of_results += 1
         print()
-    print()
+    print(f"Totalt antal träffar: {number_of_results}")
+    
 
 
 def print_episode(episode_info):
@@ -89,11 +100,6 @@ def convert_utc_to_date(utcdate):
 def insert_episodes_into_db(cursor, episodes):
     for episode in episodes:
         date = extract_date_from_string(episode['publishdateutc'])
-        #print("Id: " + str(episode["id"]))
-        #print("Titel: " + episode["title"])
-        #print("Datum: " + date)
-        #print("Beskrivning: " + episode["description"])
-        #print()
         try:
             cursor.execute("INSERT INTO episodes(id, title, published, url, description) VALUES(?,?,?,?,?)",
                             (episode["id"], episode["title"], date, episode["url"], episode["description"]))
@@ -101,4 +107,7 @@ def insert_episodes_into_db(cursor, episodes):
             pass
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) == 2 and sys.argv[1] == "update":
+        main(True)
+    else:
+        main()
