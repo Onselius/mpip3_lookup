@@ -6,21 +6,29 @@ import re
 import sqlite3
 import sys
 
-def main(update=False):
+def main():
     db = sqlite3.connect("episodes.db")
     cursor = db.cursor()
 
-    if update and update_db(cursor):
+    if ask_for_upgrade(cursor) and update_db(cursor):
         print("committing changes to db")
         db.commit()
-    
-    search_episode(cursor)
+
+    while search_episode(cursor):
+        pass
     
     db.close()
 
+def ask_for_upgrade(cursor):
+    latest_episode = check_latest_episode_in_db(cursor)
+    answer = input(f"Vill du uppdatera databasen? Senaste inlagda avsnittet är {latest_episode} (j/n): ")
+    if answer.lower() == "j":
+        return True
+    return False
 
 def update_db(cursor):
     latest_episode = check_latest_episode_in_db(cursor)
+    latest_episode += datetime.timedelta(days=1)
     url = "http://api.sr.se/api/v2/episodes/index?programid=2024&fromdate=" + str(latest_episode) + "&page=1&size=25&format=json"
 
     number_of_episodes = 0
@@ -45,8 +53,6 @@ def check_latest_episode_in_db(cursor):
     cursor.execute("SELECT published FROM episodes ORDER BY published DESC")
     try:
         latest_episode = convert_utc_to_date(cursor.fetchone()[0])
-        print(f"Senast inlagda avsnittet är {latest_episode}")
-        latest_episode += datetime.timedelta(days=1)
     except TypeError as identifier:
         latest_episode = "2009-01-01"
         print(f"Inget avsnitt inlagt, använder 2009-01-04 för att fylla databasen")
@@ -58,7 +64,7 @@ def search_episode(cursor):
     while len(search_term) < 3:
         search_term = input("Ange sökterm (min 3 bokstäver): ")
         if len(search_term) == 0:
-            return
+            return False
         
     print()
     terms = search_term.split()
@@ -75,6 +81,7 @@ def search_episode(cursor):
         number_of_results += 1
         print()
     print(f"Totalt antal träffar: {number_of_results}")
+    return True
     
 
 
@@ -107,7 +114,4 @@ def insert_episodes_into_db(cursor, episodes):
             pass
 
 if __name__ == "__main__":
-    if len(sys.argv) == 2 and sys.argv[1] == "update":
-        main(True)
-    else:
-        main()
+    main()
