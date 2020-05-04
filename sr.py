@@ -4,7 +4,6 @@ import requests
 import datetime
 import re
 import sqlite3
-import sys
 
 def main():
     db = sqlite3.connect("episodes.db")
